@@ -1,0 +1,594 @@
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:   # allows manual trigger from GitHub UI
+
+jobs:
+  build-iso:
+    name: Build CrystalOS ISO
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+
+    # ── 1. Checkout repo ───────────────────────────────────────────────────
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # ── 2. Install build tools ─────────────────────────────────────────────
+    - name: Install live-build and dependencies
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends \
+          live-build \
+          debootstrap \
+          squashfs-tools \
+          xorriso \
+          isolinux \
+          syslinux-utils \
+          grub-pc-bin \
+          grub-efi-amd64-bin \
+          mtools \
+          dosfstools \
+          rsync \
+          imagemagick \
+          fonts-dejavu \
+          python3
+        echo "✓ Build tools installed"
+
+    # ── 3. Configure live-build ────────────────────────────────────────────
+    - name: Configure live-build
+      run: |
+        mkdir -p /tmp/crystalos-lb
+        cd /tmp/crystalos-lb
+
+        sudo lb config \
+          --mode           debian              \
+          --distribution   bookworm            \
+          --architectures  amd64               \
+          --archive-areas  "main contrib non-free non-free-firmware" \
+          --binary-images  iso-hybrid          \
+          --bootloaders    "grub-pc,grub-efi"  \
+          --debian-installer none              \
+          --memtest         none               \
+          --iso-volume      "CrystalOS"        \
+          --iso-publisher   "CrystalOS Project" \
+          --iso-application "CrystalOS"        \
+          --image-name      "CrystalOS"        \
+          --checksums       sha256             \
+          --compression     xz                 \
+          --apt-options     "--yes"            \
+          --apt-secure      false              \
+          --mirror-bootstrap "http://deb.debian.org/debian/" \
+          --mirror-binary    "http://deb.debian.org/debian/"
+
+        echo "✓ live-build configured"
+
+    # ── 4. Write package list ──────────────────────────────────────────────
+    - name: Write package list
+      run: |
+        cd /tmp/crystalos-lb
+        mkdir -p config/package-lists
+
+        cat > config/package-lists/crystalos.list.chroot << 'EOF'
+        # Base
+        systemd
+        systemd-sysv
+        udev
+        dbus
+        acpi
+        acpid
+        # Network
+        network-manager
+        network-manager-gnome
+        wireless-tools
+        wpasupplicant
+        curl
+        wget
+        # Display
+        xorg
+        xserver-xorg
+        xserver-xorg-video-all
+        xserver-xorg-input-all
+        x11-xserver-utils
+        xinit
+        xauth
+        # Window manager
+        openbox
+        obconf
+        picom
+        # Panel & launcher
+        tint2
+        rofi
+        dunst
+        # File manager
+        pcmanfm
+        gvfs
+        gvfs-backends
+        udisks2
+        # Terminal
+        alacritty
+        # Editor
+        mousepad
+        # Login manager
+        lightdm
+        lightdm-gtk-greeter
+        lightdm-gtk-greeter-settings
+        # Themes & fonts
+        gtk2-engines-murrine
+        gtk2-engines-pixbuf
+        adwaita-icon-theme
+        papirus-icon-theme
+        fonts-dejavu
+        fonts-dejavu-extra
+        fonts-noto
+        fonts-ubuntu
+        fontconfig
+        fonts-liberation
+        # Apps
+        eog
+        file-roller
+        p7zip-full
+        vlc
+        pulseaudio
+        pavucontrol
+        firefox-esr
+        # System tools
+        htop
+        neofetch
+        gparted
+        lxappearance
+        arandr
+        libnotify-bin
+        xscreensaver
+        # Drivers
+        firmware-linux
+        firmware-linux-nonfree
+        firmware-amd-graphics
+        firmware-iwlwifi
+        firmware-realtek
+        xserver-xorg-video-vmware
+        virtualbox-guest-x11
+        open-vm-tools
+        open-vm-tools-desktop
+        EOF
+
+        echo "✓ Package list written"
+
+    # ── 5. Write all hooks ─────────────────────────────────────────────────
+    - name: Write hooks
+      run: |
+        cd /tmp/crystalos-lb
+        mkdir -p config/hooks/live
+
+        # ── Hook: user + autologin ──────────────────────────────────────────
+        cat > config/hooks/live/0100-user.hook.chroot << 'HOOK'
+        #!/bin/bash
+        set -e
+        useradd -m -s /bin/bash -G sudo,audio,video,plugdev,netdev crystal 2>/dev/null || true
+        echo "crystal:crystal" | chpasswd
+        echo "crystal ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/crystal
+        chmod 440 /etc/sudoers.d/crystal
+
+        mkdir -p /etc/lightdm
+        cat > /etc/lightdm/lightdm.conf << 'LIGHTDM'
+        [SeatDefaults]
+        autologin-user=crystal
+        autologin-user-timeout=0
+        user-session=openbox
+        greeter-session=lightdm-gtk-greeter
+        LIGHTDM
+
+        cat > /etc/lightdm/lightdm-gtk-greeter.conf << 'GREETER'
+        [greeter]
+        theme-name=Adwaita-dark
+        icon-theme-name=Papirus-Dark
+        background=/usr/share/crystalos/wallpapers/crystalos-default.png
+        font-name=Ubuntu 11
+        GREETER
+
+        systemctl enable lightdm       2>/dev/null || true
+        systemctl enable NetworkManager 2>/dev/null || true
+        systemctl enable acpid          2>/dev/null || true
+
+        mkdir -p /usr/share/xsessions
+        cat > /usr/share/xsessions/openbox.desktop << 'SESSION'
+        [Desktop Entry]
+        Name=CrystalOS
+        Comment=CrystalOS Openbox Session
+        Exec=/usr/bin/openbox-session
+        Type=Application
+        SESSION
+        HOOK
+        chmod +x config/hooks/live/0100-user.hook.chroot
+
+        # ── Hook: GTK theme ─────────────────────────────────────────────────
+        cat > config/hooks/live/0110-theme.hook.chroot << 'HOOK'
+        #!/bin/bash
+        set -e
+        for D in /etc/skel /home/crystal; do
+          mkdir -p "$D/.config/gtk-3.0"
+          cat > "$D/.config/gtk-3.0/settings.ini" << 'GTK'
+        [Settings]
+        gtk-theme-name=Adwaita-dark
+        gtk-icon-theme-name=Papirus-Dark
+        gtk-font-name=Ubuntu 11
+        gtk-cursor-theme-name=Adwaita
+        gtk-xft-antialias=1
+        gtk-xft-hinting=1
+        gtk-xft-hintstyle=hintfull
+        gtk-xft-rgba=rgb
+        GTK
+          cat > "$D/.gtkrc-2.0" << 'GTK2'
+        gtk-theme-name="Adwaita-dark"
+        gtk-icon-theme-name="Papirus-Dark"
+        gtk-font-name="Ubuntu 11"
+        GTK2
+        done
+        chown -R crystal:crystal /home/crystal 2>/dev/null || true
+        HOOK
+        chmod +x config/hooks/live/0110-theme.hook.chroot
+
+        # ── Hook: Openbox ───────────────────────────────────────────────────
+        cat > config/hooks/live/0120-openbox.hook.chroot << 'HOOK'
+        #!/bin/bash
+        set -e
+        for D in /etc/skel /home/crystal; do
+          mkdir -p "$D/.config/openbox"
+
+          cat > "$D/.config/openbox/autostart" << 'AUTO'
+        feh --bg-fill /usr/share/crystalos/wallpapers/crystalos-default.png &
+        picom --daemon &
+        tint2 &
+        dunst &
+        nm-applet &
+        xscreensaver -no-splash &
+        xsetroot -cursor_name left_ptr
+        xset s off && xset -dpms && xset s noblank
+        AUTO
+
+          cat > "$D/.config/openbox/menu.xml" << 'MENU'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <openbox_menu xmlns="http://openbox.org/3.4/menu">
+          <menu id="root-menu" label="CrystalOS">
+            <item label="Terminal"><action name="Execute"><command>alacritty</command></action></item>
+            <item label="Files"><action name="Execute"><command>pcmanfm</command></action></item>
+            <item label="Browser"><action name="Execute"><command>firefox-esr</command></action></item>
+            <item label="Text Editor"><action name="Execute"><command>mousepad</command></action></item>
+            <separator/>
+            <item label="App Launcher"><action name="Execute"><command>rofi -show drun -theme crystal</command></action></item>
+            <separator/>
+            <menu id="system-menu" label="System">
+              <item label="Task Manager"><action name="Execute"><command>alacritty -e htop</command></action></item>
+              <item label="Disk Manager"><action name="Execute"><command>gparted</command></action></item>
+              <item label="Display"><action name="Execute"><command>arandr</command></action></item>
+              <item label="Sound"><action name="Execute"><command>pavucontrol</command></action></item>
+              <item label="Appearance"><action name="Execute"><command>lxappearance</command></action></item>
+            </menu>
+            <separator/>
+            <item label="Lock Screen"><action name="Execute"><command>xscreensaver-command -lock</command></action></item>
+            <item label="Reboot"><action name="Execute"><command>systemctl reboot</command></action></item>
+            <item label="Shutdown"><action name="Execute"><command>systemctl poweroff</command></action></item>
+          </menu>
+        </openbox_menu>
+        MENU
+        done
+        chown -R crystal:crystal /home/crystal 2>/dev/null || true
+        HOOK
+        chmod +x config/hooks/live/0120-openbox.hook.chroot
+
+        # ── Hook: Tint2 panel ───────────────────────────────────────────────
+        cat > config/hooks/live/0130-tint2.hook.chroot << 'HOOK'
+        #!/bin/bash
+        set -e
+        for D in /etc/skel /home/crystal; do
+          mkdir -p "$D/.config/tint2"
+          cat > "$D/.config/tint2/tint2rc" << 'T2'
+        panel_items = LTSC
+        panel_size = 100% 40
+        panel_margin = 0 0
+        panel_padding = 4 2 4
+        panel_background_id = 1
+        panel_position = bottom center horizontal
+        panel_layer = top
+        taskbar_mode = single_desktop
+
+        rounded = 0
+        border_width = 0
+        background_color = #0d1117 100
+        border_color = #00bcd4 0
+
+        rounded = 4
+        border_width = 1
+        background_color = #161b22 90
+        border_color = #00bcd4 30
+
+        rounded = 4
+        border_width = 1
+        background_color = #00bcd4 25
+        border_color = #00bcd4 60
+
+        task_maximum_size = 160 35
+        task_padding = 4 2 4
+        task_font = Ubuntu 10
+        task_font_color = #cdd6f4 85
+        task_active_font_color = #00bcd4 100
+        task_background_id = 2
+        task_active_background_id = 3
+        mouse_left = toggle_iconify
+        mouse_middle = close
+
+        launcher_padding = 4 4 4
+        launcher_icon_size = 24
+        launcher_item_app = /usr/share/applications/pcmanfm.desktop
+        launcher_item_app = /usr/share/applications/firefox-esr.desktop
+        launcher_item_app = /usr/share/applications/alacritty.desktop
+        launcher_item_app = /usr/share/applications/mousepad.desktop
+
+        systray_padding = 4 4 4
+        systray_icon_size = 22
+
+        time1_format = %H:%M
+        time2_format = %a %d %b
+        time1_font = Ubuntu Bold 12
+        time2_font = Ubuntu 9
+        clock_font_color = #cdd6f4 100
+        clock_padding = 8 2
+        T2
+        done
+        chown -R crystal:crystal /home/crystal 2>/dev/null || true
+        HOOK
+        chmod +x config/hooks/live/0130-tint2.hook.chroot
+
+        # ── Hook: Alacritty ─────────────────────────────────────────────────
+        cat > config/hooks/live/0140-alacritty.hook.chroot << 'HOOK'
+        #!/bin/bash
+        set -e
+        for D in /etc/skel /home/crystal; do
+          mkdir -p "$D/.config/alacritty"
+          cat > "$D/.config/alacritty/alacritty.toml" << 'ALC'
+        [window]
+        padding = { x = 12, y = 12 }
+        opacity = 0.92
+
+        [font]
+        normal = { family = "DejaVu Sans Mono", style = "Regular" }
+        size = 12.0
+
+        [colors.primary]
+        background = "#0d1117"
+        foreground = "#cdd6f4"
+
+        [colors.cursor]
+        text   = "#0d1117"
+        cursor = "#00bcd4"
+
+        [colors.normal]
+        black   = "#181926"
+        red     = "#f38ba8"
+        green   = "#a6e3a1"
+        yellow  = "#f9e2af"
+        blue    = "#89b4fa"
+        magenta = "#cba6f7"
+        cyan    = "#00bcd4"
+        white   = "#cdd6f4"
+
+        [cursor]
+        style = { shape = "Block", blinking = "On" }
+        ALC
+        done
+        chown -R crystal:crystal /home/crystal 2>/dev/null || true
+        HOOK
+        chmod +x config/hooks/live/0140-alacritty.hook.chroot
+
+        # ── Hook: Rofi theme ────────────────────────────────────────────────
+        cat > config/hooks/live/0150-rofi.hook.chroot << 'HOOK'
+        #!/bin/bash
+        set -e
+        mkdir -p /usr/share/rofi/themes
+        cat > /usr/share/rofi/themes/crystal.rasi << 'ROFI'
+        * {
+            bg0: #0d1117ee; bg1: #161b22ff;
+            fg0: #cdd6f4ff; fg1: #8b949eff;
+            accent: #00bcd4ff;
+            font: "Ubuntu 13";
+        }
+        window {
+            width: 520px; padding: 20px;
+            border: 2px solid; border-color: @accent;
+            border-radius: 12px; background-color: @bg0;
+        }
+        mainbox    { spacing: 10px; }
+        inputbar   { padding: 10px 14px; border-radius: 8px; background-color: @bg1; children: [prompt,entry]; }
+        prompt     { foreground: @accent; }
+        entry      { foreground: @fg0; }
+        listview   { lines: 8; spacing: 4px; background-color: transparent; }
+        element    { padding: 8px 12px; border-radius: 6px; background-color: transparent; foreground: @fg1; spacing: 10px; }
+        element selected { background-color: @accent; foreground: @bg0; }
+        element-icon { size: 28px; }
+        element-text { foreground: inherit; vertical-align: 0.5; }
+        ROFI
+
+        for D in /etc/skel /home/crystal; do
+          mkdir -p "$D/.config/rofi"
+          cat > "$D/.config/rofi/config.rasi" << 'RC'
+        configuration { modi: "drun,run"; show-icons: true; icon-theme: "Papirus-Dark"; terminal: "alacritty"; }
+        @theme "crystal"
+        RC
+        done
+        chown -R crystal:crystal /home/crystal 2>/dev/null || true
+        HOOK
+        chmod +x config/hooks/live/0150-rofi.hook.chroot
+
+        # ── Hook: Wallpaper + branding ──────────────────────────────────────
+        cat > config/hooks/live/0160-branding.hook.chroot << 'HOOK'
+        #!/bin/bash
+        set -e
+        mkdir -p /usr/share/crystalos/wallpapers
+
+        python3 - << 'PY'
+        import struct, zlib, math
+
+        def png_chunk(tag, data):
+            crc = zlib.crc32(tag + data) & 0xffffffff
+            return struct.pack('>I', len(data)) + tag + data + struct.pack('>I', crc)
+
+        W, H = 1920, 1080
+        raw = bytearray()
+        for y in range(H):
+            raw.append(0)
+            for x in range(W):
+                # Deep dark base with crystal teal gradient glow
+                cx, cy = x - W//2, y - H//2
+                dist = math.sqrt(cx*cx + cy*cy)
+                glow = max(0, 1 - dist / 600)
+                r = int(13  + glow * 0)
+                g = int(17  + glow * 35)
+                b = int(23  + glow * 52)
+                # Subtle grid lines
+                if x % 120 == 0 or y % 120 == 0:
+                    r = min(255, r + 8)
+                    g = min(255, g + 12)
+                    b = min(255, b + 15)
+                raw += bytes([r, g, b])
+
+        ihdr = struct.pack('>IIBBBBB', W, H, 8, 2, 0, 0, 0)
+        idat = zlib.compress(bytes(raw), 6)
+        data = (b'\x89PNG\r\n\x1a\n'
+                + png_chunk(b'IHDR', ihdr)
+                + png_chunk(b'IDAT', idat)
+                + png_chunk(b'IEND', b''))
+
+        with open('/usr/share/crystalos/wallpapers/crystalos-default.png', 'wb') as f:
+            f.write(data)
+        print('Wallpaper generated.')
+        PY
+
+        # OS branding
+        cat > /etc/os-release << 'OS'
+        PRETTY_NAME="CrystalOS 1.0"
+        NAME="CrystalOS"
+        VERSION_ID="1.0"
+        VERSION="1.0 (Crystal)"
+        ID=crystalos
+        ID_LIKE=debian
+        OS
+
+        cat > /etc/issue << 'ISS'
+
+          CrystalOS 1.0  |  User: crystal  |  Password: crystal
+
+        ISS
+
+        # Desktop shortcuts
+        mkdir -p /etc/skel/Desktop
+        for ITEM in \
+          "Files;pcmanfm;system-file-manager" \
+          "Terminal;alacritty;utilities-terminal" \
+          "Browser;firefox-esr;firefox-esr" \
+          "Editor;mousepad;accessories-text-editor"; do
+          NAME=$(echo $ITEM | cut -d';' -f1)
+          EXEC=$(echo $ITEM | cut -d';' -f2)
+          ICON=$(echo $ITEM | cut -d';' -f3)
+          cat > "/etc/skel/Desktop/${NAME}.desktop" << DESK
+        [Desktop Entry]
+        Version=1.0
+        Type=Application
+        Name=${NAME}
+        Exec=${EXEC}
+        Icon=${ICON}
+        Terminal=false
+        DESK
+          chmod +x "/etc/skel/Desktop/${NAME}.desktop"
+        done
+
+        # Bash prompt
+        cat > /etc/skel/.bashrc << 'BASH'
+        CRY='\[\033[0;96m\]'; GRN='\[\033[0;32m\]'; RST='\[\033[0m\]'
+        PS1="${CRY}╭─${GRN}\u${CRY}@crystalos${CRY}:${GRN}\w${RST}\n${CRY}╰─❯${RST} "
+        alias ls='ls --color=auto -h'
+        alias ll='ls -alFh --color=auto'
+        alias update='sudo apt update && sudo apt upgrade -y'
+        command -v neofetch &>/dev/null && neofetch
+        BASH
+
+        [[ -d /home/crystal ]] && {
+          cp -r /etc/skel/Desktop /home/crystal/
+          cp /etc/skel/.bashrc /home/crystal/.bashrc
+          chown -R crystal:crystal /home/crystal
+        }
+        HOOK
+        chmod +x config/hooks/live/0160-branding.hook.chroot
+
+        # ── Hook: GRUB theme ────────────────────────────────────────────────
+        cat > config/hooks/live/0170-grub.hook.chroot << 'HOOK'
+        #!/bin/bash
+        set -e
+        mkdir -p /boot/grub/themes/crystal
+
+        cat > /boot/grub/themes/crystal/theme.txt << 'GT'
+        title-text: "CrystalOS"
+        title-color: "#00bcd4"
+        desktop-color: "#0d1117"
+        boot-menu-color: "#cdd6f4"
+        boot-menu-selected-color: "#00bcd4"
+        + boot_menu {
+            left = 25%; top = 35%; width = 50%; height = 40%;
+            item_font = "DejaVu Sans 14";
+            item_color = "#8b949e";
+            selected_item_color = "#00bcd4";
+            item_height = 36; item_padding = 10;
+        }
+        + label {
+            left = 25%; top = 82%; width = 50%; height = 5%;
+            align = center; font = "DejaVu Sans 11";
+            color = "#6c7086";
+            text = "CrystalOS 1.0  ·  Arrow keys to navigate  ·  Enter to boot";
+        }
+        GT
+
+        cat > /etc/default/grub << 'GC'
+        GRUB_DEFAULT=0
+        GRUB_TIMEOUT=5
+        GRUB_DISTRIBUTOR="CrystalOS"
+        GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
+        GRUB_THEME="/boot/grub/themes/crystal/theme.txt"
+        GRUB_GFXMODE="1920x1080x32,1280x800x32,auto"
+        GRUB_GFXPAYLOAD_LINUX="keep"
+        GRUB_TERMINAL_OUTPUT="gfxterm"
+        GC
+        HOOK
+        chmod +x config/hooks/live/0170-grub.hook.chroot
+
+        echo "✓ All hooks written"
+
+    # ── 6. Build the ISO ───────────────────────────────────────────────────
+    - name: Build ISO (lb build)
+      run: |
+        cd /tmp/crystalos-lb
+        sudo lb build 2>&1
+        echo "✓ lb build complete"
+
+    # ── 7. Find and rename ISO ─────────────────────────────────────────────
+    - name: Collect ISO
+      run: |
+        ISO=$(find /tmp/crystalos-lb -maxdepth 2 -name "*.iso" | head -1)
+        echo "Found: $ISO"
+        mkdir -p "$GITHUB_WORKSPACE/output"
+        cp "$ISO" "$GITHUB_WORKSPACE/output/CrystalOS.iso"
+        sha256sum "$GITHUB_WORKSPACE/output/CrystalOS.iso" \
+          > "$GITHUB_WORKSPACE/output/CrystalOS.iso.sha256"
+        ls -lh "$GITHUB_WORKSPACE/output/"
+        echo "ISO_PATH=$GITHUB_WORKSPACE/output/CrystalOS.iso" >> $GITHUB_ENV
+
+    # ── 8. Upload as downloadable artifact ────────────────────────────────
+    - name: Upload CrystalOS ISO
+      uses: actions/upload-artifact@v4
+      with:
+        name: CrystalOS-ISO
+        path: |
+          output/CrystalOS.iso
+          output/CrystalOS.iso.sha256
+        retention-days: 30
+        compression-level: 0   # ISO is already compressed — skip re-compression
