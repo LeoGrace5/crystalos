@@ -1,0 +1,182 @@
+:root {
+  --jetfire-gold: #f5b942;
+  --jetfire-blue: #103b73;
+  --jetfire-red: #cb2d3e;
+  --ink: #0a1325;
+  --cream: #fff5df;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Outfit", sans-serif;
+  background: linear-gradient(160deg, #09182f 0%, #0f2e5c 45%, #7d1a24 100%);
+  color: #fff;
+}
+
+.hero {
+  min-height: 80vh;
+  padding: 1.5rem 5vw 4rem;
+  background:
+    radial-gradient(circle at top right, rgba(245, 185, 66, 0.25), transparent 40%),
+    radial-gradient(circle at bottom left, rgba(203, 45, 62, 0.3), transparent 40%);
+}
+
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4rem;
+}
+
+.brand {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--jetfire-gold);
+  letter-spacing: 0.04em;
+}
+
+.navbar ul {
+  display: flex;
+  gap: 1rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.navbar a {
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.navbar a:hover {
+  color: var(--jetfire-gold);
+}
+
+.hero-content {
+  max-width: 700px;
+}
+
+.tag {
+  color: var(--jetfire-gold);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.8rem;
+}
+
+h1 {
+  font-size: clamp(2rem, 5vw, 4rem);
+  margin: 0.3rem 0 1rem;
+}
+
+h1 span {
+  color: var(--jetfire-gold);
+}
+
+.subtitle {
+  color: #dce7ff;
+  max-width: 55ch;
+  line-height: 1.6;
+}
+
+.btn-primary {
+  display: inline-block;
+  margin-top: 1.5rem;
+  background: linear-gradient(90deg, var(--jetfire-gold), #ffdb84);
+  color: var(--ink);
+  padding: 0.8rem 1.3rem;
+  border-radius: 999px;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+main {
+  padding: 2rem 5vw 4rem;
+}
+
+.cards-section h2,
+.offers h2,
+.booking h2 {
+  color: var(--cream);
+  margin-top: 0;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  background: rgba(16, 59, 115, 0.7);
+  border: 1px solid rgba(245, 185, 66, 0.35);
+  border-radius: 14px;
+  padding: 1rem;
+}
+
+.card h3 {
+  margin-top: 0;
+  color: var(--jetfire-gold);
+}
+
+.offers {
+  margin-top: 2.5rem;
+  background: linear-gradient(120deg, rgba(203, 45, 62, 0.7), rgba(16, 59, 115, 0.9));
+  border-left: 5px solid var(--jetfire-gold);
+  padding: 1.2rem;
+  border-radius: 10px;
+}
+
+.booking {
+  margin-top: 2.5rem;
+}
+
+form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.9rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: #d5e4ff;
+  font-size: 0.95rem;
+}
+
+input,
+button {
+  border: none;
+  border-radius: 8px;
+  padding: 0.7rem;
+  font: inherit;
+}
+
+input {
+  background: #f0f5ff;
+  color: #192846;
+}
+
+button {
+  align-self: end;
+  background: var(--jetfire-red);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover {
+  filter: brightness(1.08);
+}
+
+footer {
+  text-align: center;
+  padding: 1.2rem;
+  color: #ffdba4;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
