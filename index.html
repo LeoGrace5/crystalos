@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jetfire Air | Booking Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-wrap">
+      <div class="logo">✈</div>
+      <div>
+        <h1>Jetfire Air</h1>
+        <p>Gold Class Comfort · Global Routes</p>
+      </div>
+    </div>
+    <nav>
+      <a href="#booking-flow">Book</a>
+      <a href="#flight-info">Flight Info</a>
+      <a href="#services">Services</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Book with confidence</p>
+        <h2>From search to e-ticket in one smooth flow.</h2>
+        <p>Plan your next trip with real-style airline steps: route selection, traveler info, seat choice, fare summary, secure payment, and downloadable e-ticket.</p>
+      </div>
+      <div class="hero-card">
+        <h3>Today’s Highlight</h3>
+        <p>New York (JFK) → London (LHR)</p>
+        <p><strong>From $742</strong> round trip · Includes cabin bag</p>
+      </div>
+    </section>
+
+    <section id="booking-flow" class="panel">
+      <h3>Jetfire Air Booking Portal</h3>
+      <ol class="steps" id="steps">
+        <li class="active">1. Booking</li>
+        <li>2. Traveler Info</li>
+        <li>3. Seat Choosing</li>
+        <li>4. Summary</li>
+        <li>5. Payment</li>
+        <li>6. E-ticket</li>
+      </ol>
+
+      <form id="bookingForm">
+        <section class="step-pane active" data-step="0">
+          <div class="grid two">
+            <label>From Airport
+              <select id="fromAirport" required>
+                <option value="">Select departure airport</option>
+              </select>
+            </label>
+            <label>To Airport
+              <select id="toAirport" required>
+                <option value="">Select destination airport</option>
+              </select>
+            </label>
+          </div>
+          <div class="grid three">
+            <label>Trip Type
+              <select id="tripType">
+                <option>Round Trip</option>
+                <option>One Way</option>
+              </select>
+            </label>
+            <label>Departure Date
+              <input id="departDate" type="date" required />
+            </label>
+            <label>Return Date
+              <input id="returnDate" type="date" />
+            </label>
+          </div>
+          <div class="grid three">
+            <label>Adults
+              <input id="adultCount" type="number" value="1" min="1" max="8" required />
+            </label>
+            <label>Children
+              <input id="childCount" type="number" value="0" min="0" max="8" required />
+            </label>
+            <label>Cabin Class
+              <select id="cabinClass">
+                <option>Economy</option>
+                <option>Premium Economy</option>
+                <option>Business</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section class="step-pane" data-step="1">
+          <div class="grid two">
+            <label>Full Name
+              <input id="fullName" type="text" placeholder="As on passport" required />
+            </label>
+            <label>Email
+              <input id="email" type="email" placeholder="name@example.com" required />
+            </label>
+          </div>
+          <div class="grid three">
+            <label>Phone
+              <input id="phone" type="tel" placeholder="+1 555 000 0000" required />
+            </label>
+            <label>Date of Birth
+              <input id="dob" type="date" required />
+            </label>
+            <label>Passport / ID
+              <input id="passport" type="text" placeholder="Document number" required />
+            </label>
+          </div>
+        </section>
+
+        <section class="step-pane" data-step="2">
+          <p class="note">Choose one seat from the available map. Gold seats are premium rows.</p>
+          <div id="seatMap" class="seat-map" role="radiogroup" aria-label="Seat selection"></div>
+          <input type="hidden" id="seat" />
+        </section>
+
+        <section class="step-pane" data-step="3">
+          <div class="summary" id="summary"></div>
+        </section>
+
+        <section class="step-pane" data-step="4">
+          <div class="grid two">
+            <label>Cardholder Name
+              <input id="cardName" type="text" required />
+            </label>
+            <label>Card Number
+              <input id="cardNumber" type="text" inputmode="numeric" maxlength="19" placeholder="4242 4242 4242 4242" required />
+            </label>
+          </div>
+          <div class="grid three">
+            <label>Expiry
+              <input id="cardExpiry" type="text" maxlength="5" placeholder="MM/YY" required />
+            </label>
+            <label>CVV
+              <input id="cardCvv" type="password" maxlength="4" inputmode="numeric" required />
+            </label>
+            <label>Billing Zip
+              <input id="billingZip" type="text" maxlength="10" required />
+            </label>
+          </div>
+          <p class="secure">🔒 Secure payment simulated for demo use.</p>
+        </section>
+
+        <section class="step-pane" data-step="5">
+          <div class="ticket" id="ticket"></div>
+        </section>
+
+        <div class="actions">
+          <button type="button" id="prevBtn" class="secondary">Back</button>
+          <button type="button" id="nextBtn">Continue</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="flight-info" class="panel compact">
+      <h3>Flight Information</h3>
+      <p>Check-in opens 24 hours before departure. For international flights, arrive at the airport at least 3 hours before scheduled departure.</p>
+    </section>
+
+    <section id="services" class="panel compact">
+      <h3>Onboard Services</h3>
+      <ul>
+        <li>Complimentary meals on long-haul routes</li>
+        <li>Live map and streaming entertainment</li>
+        <li>Flexible fare upgrades and lounge access</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <p>© 2026 Jetfire Air. Demo booking flow for design and prototyping.</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
